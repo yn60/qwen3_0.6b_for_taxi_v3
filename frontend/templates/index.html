@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taxi-v3 Copilot</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <main class="app-shell">
+        <header class="app-header">
+            <div>
+                <h1>Taxi-v3 Copilot</h1>
+                <p>Watch Qwen3 0.6B reason through the classic Gym environment — locally, no APIs.</p>
+            </div>
+            <div class="status-pill" id="status-indicator">Waiting…</div>
+        </header>
+
+        <section class="grid-layout">
+            <section class="panel board">
+                <div class="panel-header">
+                    <h2>Grid Render</h2>
+                    <span id="steps-value">Steps: 0</span>
+                </div>
+                <div id="taxi-grid" class="grid-board is-empty" aria-live="polite">
+                    <span class="grid-placeholder">Press reset to render the board.</span>
+                </div>
+                <div class="grid-legend" id="grid-legend">
+                    <span class="legend-entry"><span class="legend-chip taxi">🚕</span>Taxi</span>
+                    <span class="legend-entry"><span class="legend-chip passenger">🧍</span>Passenger</span>
+                    <span class="legend-entry"><span class="legend-chip destination">★</span>Destination</span>
+                    <span class="legend-entry"><span class="legend-chip landmark">R/G/Y/B</span>Landmarks</span>
+                </div>
+            </section>
+
+            <section class="panel state">
+                <div class="panel-header">
+                    <h2>State Summary</h2>
+                    <span id="reward-value">Reward: 0</span>
+                </div>
+                <p id="state-description" class="state-text">—</p>
+                <dl class="state-breakdown">
+                    <div>
+                        <dt>Taxi</dt>
+                        <dd id="taxi-coords">(?, ?)</dd>
+                    </div>
+                    <div>
+                        <dt>Passenger</dt>
+                        <dd id="passenger-location">—</dd>
+                    </div>
+                    <div>
+                        <dt>Destination</dt>
+                        <dd id="destination-location">—</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="panel llm">
+                <div class="panel-header">
+                    <h2>Qwen Thinking</h2>
+                    <span id="llm-action">Action: –</span>
+                </div>
+                <pre id="llm-thinking">—</pre>
+            </section>
+
+            <section class="panel history">
+                <div class="panel-header">
+                    <h2>Timeline</h2>
+                </div>
+                <ol id="history-list" class="history-list">
+                    <li class="history-empty">Steps will appear here once the agent acts.</li>
+                </ol>
+            </section>
+        </section>
+
+        <footer class="controls">
+            <button id="reset-button" class="btn secondary">Reset</button>
+            <button id="step-button" class="btn primary">Step once</button>
+            <button id="auto-step-button" class="btn ghost">Start auto-play</button>
+        </footer>
+    </main>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

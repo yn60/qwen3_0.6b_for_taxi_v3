@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "gym-taxi-qwen3"
+version = "0.1.0"
+description = "A project integrating OpenAI Gym's Taxi-v3 environment with Qwen3 for decision-making."
+authors = ["Your Name <youremail@example.com>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+flask = "^3.0"
+gymnasium = "^0.26.0"
+requests = "^2.26.0"
+numpy = "^1.26.0"
+pandas = "^2.2.0"
+python-dotenv = "^1.0.0"
+transformers = "^4.45.0"
+accelerate = "^0.33.0"
+torch = "^2.1.0"
+safetensors = "^0.4.2"
+huggingface-hub = "^0.23.0"
+sentencepiece = "^0.1.99"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
