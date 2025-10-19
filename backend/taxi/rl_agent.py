@@ -25,6 +25,28 @@ class QLearningAgent:
         new_value = (1 - self.alpha) * old_value + self.alpha * (reward + self.gamma * next_max)
         self.q_table[state][action] = new_value
 
+    def decode_state(self, state):
+        """Convert numerical state to human-readable text description"""
+        # Manual decoding for Taxi-v3 state
+        # Taxi-v3 state space: 500 states = 5x5 grid × 5 passenger locations × 4 destinations
+        # State encoding: (taxi_row * 100) + (taxi_col * 20) + (passenger_location * 4) + destination
+        
+        taxi_row = state // 100
+        taxi_col = (state % 100) // 20
+        pass_loc = (state % 20) // 4
+        dest_idx = state % 4
+        
+        locations = ["Red", "Green", "Yellow", "Blue", "in taxi"]
+        
+        state_description = {
+            "taxi_position": f"({taxi_row}, {taxi_col})",
+            "passenger_location": locations[pass_loc],
+            "destination": locations[dest_idx],
+            "raw_state": int(state)
+        }
+        
+        return state_description
+
     def train(self, episodes):
         successful_episodes = []
         for i in range(episodes):
@@ -38,14 +60,21 @@ class QLearningAgent:
                 action = self.choose_action(state)
                 next_state, reward, done, truncated, info = self.env.step(action)
                 self.learn(state, action, reward, next_state)
-                episode_data.append((state, action, reward))
+                
+                decoded_state = self.decode_state(state)
+                episode_data.append({
+                    "state": decoded_state,
+                    "action": int(action),
+                    "reward": float(reward)
+                })
+                
                 state = next_state
                 total_reward += reward
 
             if reward == 20:  # Successfully dropped off the passenger
                 successful_episodes.append({
-                    "episode": i,
-                    "total_reward": total_reward,
+                    "episode": int(i),
+                    "total_reward": float(total_reward),
                     "steps": episode_data
                 })
 
@@ -60,15 +89,15 @@ class QLearningAgent:
 def solve_taxi_v3_and_collect_data():
     env = gym.make("Taxi-v3")
     agent = QLearningAgent(env)
-    successful_episodes = agent.train(episodes=20000)
+    successful_episodes = agent.train(episodes=50)
     env.close()
     return successful_episodes
 
 if __name__ == "__main__":
     collected_data = solve_taxi_v3_and_collect_data()
     print(f"Collected {len(collected_data)} successful episodes.")
-    # You can now process or save the collected_data
-    # For example, printing the first successful episode
     if collected_data:
-        print("First successful episode data:")
-        print(collected_data[0])
+        print("\nExample successful trajectory:")
+        first_episode = collected_data[0]
+        print(f"Total reward: {first_episode['total_reward']}")
+        print(f"Steps: {len(first_episode['steps'])}")
