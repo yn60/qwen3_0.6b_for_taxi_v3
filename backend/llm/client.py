@@ -1,3 +1,4 @@
+# backend/llm/client.py
 """Local Qwen 0.6B client built on top of Hugging Face transformers."""
 
 from __future__ import annotations
@@ -26,11 +27,11 @@ class LocalQwenClient:
         self,
         model_name: str = "Qwen/Qwen3-0.6B",
         device: Optional[str] = None,
-    max_new_tokens: Optional[int] = None,
-        temperature: float = 0.3,
+        max_new_tokens: Optional[int] = None,
+        temperature: float = 0.1,
     ) -> None:
         self.model_name = model_name
-        self.max_new_tokens = max_new_tokens or 25600
+        self.max_new_tokens = max_new_tokens or 50  # Reduced to only output JSON
         self.temperature = temperature
         self._pipeline = None
         self._pipeline_lock = threading.Lock()
@@ -102,21 +103,19 @@ class LocalQwenClient:
             return "cuda"
         mps = getattr(torch.backends, "mps", None)
         if mps is not None and mps.is_available():
-            # Default to CPU for broader compatibility; allow opting in via env.
-            return "cpu"
+            return "cpu"  # Using CPU for stability on macOS
         return "cpu"
 
     def _build_messages(self, prompt: str) -> list[Dict[str, str]]:
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "First, think step-by-step in <think> tags. Keep it brief. "
-                    "Then, on a new line, output a JSON object with only the 'action' key."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ]
+        # More strict and clear instructions
+        enforced_prompt = f"""{prompt}
+
+CRITICAL INSTRUCTIONS:
+1. Output ONLY valid JSON format: {{"action": number}}
+2. Number must be between 0-5
+3. No thinking, no explanations, no other text
+4. Example: {{"action": 2}}"""
+        return [{"role": "user", "content": enforced_prompt}]
 
     def generate(self, prompt: str) -> Dict[str, Any]:
         result: Optional[Dict[str, Any]] = None
@@ -164,7 +163,7 @@ class LocalQwenClient:
                     kwargs["max_new_tokens"] = max_tokens
 
                 pipe(messages, **kwargs)
-            except Exception as exc:  # pragma: no cover - defensive guard
+            except Exception as exc:
                 generation_error = exc
 
         worker = threading.Thread(target=run_pipeline, daemon=True)
@@ -178,7 +177,7 @@ class LocalQwenClient:
             collected_parts.append(text)
             yield {"type": "token", "token": text}
 
-        worker.join(timeout=30.0)  # Add a 30-second timeout
+        worker.join(timeout=30.0)
 
         if worker.is_alive():
             yield {"type": "error", "error": "Model generation timed out."}
@@ -203,12 +202,10 @@ class LocalQwenClient:
             for attr in ("max_new_tokens", "max_length", "max_position_embeddings"):
                 value = getattr(config, attr, None)
                 if isinstance(value, int) and value > 0:
-                    # Use a generous ceiling that still respects context limits.
                     if attr == "max_position_embeddings":
                         return max(32, value - getattr(config, "max_input_length", 0))
                     return value
 
-        # Fallback to a conservative but high ceiling.
         return 1024
 
 
@@ -265,7 +262,7 @@ def _get_client() -> LocalQwenClient:
                     model_name=os.getenv("QWEN_MODEL_NAME", "Qwen/Qwen3-0.6B"),
                     device=os.getenv("QWEN_DEVICE"),
                     max_new_tokens=max_new_tokens,
-                    temperature=float(os.getenv("QWEN_TEMPERATURE", "0.3")),
+                    temperature=float(os.getenv("QWEN_TEMPERATURE", "0.1")),
                 )
     return _CLIENT
 
@@ -280,7 +277,7 @@ def _ensure_pipeline_ready(client: LocalQwenClient) -> bool:
         _LOADING_FUTURE = _EXECUTOR.submit(client._load_pipeline)
 
     if _LOADING_FUTURE.done():
-        _LOADING_FUTURE.result()  # re-raise if failed
+        _LOADING_FUTURE.result()
         return True
 
     return False
@@ -296,7 +293,6 @@ def _extract_generated_text(outputs: Any) -> str:
         return generated
 
     if isinstance(generated, list):
-        # New chat pipeline returns a list of message dicts
         assistant_messages = [m for m in generated if m.get("role") == "assistant"]
         if assistant_messages:
             last = assistant_messages[-1]
@@ -307,7 +303,6 @@ def _extract_generated_text(outputs: Any) -> str:
                 ).strip()
             if isinstance(content, str):
                 return content.strip()
-        # Fallback to concatenating
         return "\n".join(str(item) for item in generated)
 
     for key in ("text", "content"):
@@ -322,33 +317,68 @@ THINK_BLOCK_PATTERN = re.compile(r"<think>([\s\S]*?)</think>")
 
 
 def _parse_response(text: str) -> Dict[str, Any]:
+    # Clean the text first
+    text = text.strip()
+    
+    # Debug output to see what the model is actually generating
+    print(f"DEBUG - Raw LLM output: '{text}'")
+    
+    # First, try to extract JSON block
     json_match = JSON_BLOCK_PATTERN.search(text)
-    if not json_match:
-        return {"thinking_process": text.strip(), "action": None}
+    if json_match:
+        json_str = json_match.group(0)
+        try:
+            data = json.loads(json_str)
+            action = data.get("action")
+            # Validate action is within valid range
+            if action is not None and 0 <= action <= 5:
+                # Extract thinking process if any
+                think_match = THINK_BLOCK_PATTERN.search(text)
+                thinking = think_match.group(1).strip() if think_match else ""
+                return {"thinking_process": thinking, "action": action}
+        except json.JSONDecodeError:
+            # JSON parsing failed, continue to other methods
+            print(f"DEBUG - JSON parsing failed for: {json_str}")
+            pass
+    
+    # If no valid JSON found, try to find action in text
+    # Look for patterns like "action": X or "action":X
+    action_pattern = r'"action"\s*:\s*(\d)'
+    action_match = re.search(action_pattern, text)
+    if action_match:
+        try:
+            action = int(action_match.group(1))
+            if 0 <= action <= 5:
+                return {"thinking_process": text, "action": action}
+        except (ValueError, IndexError):
+            pass
+    
+    # Look for simple JSON patterns without quotes
+    simple_json_pattern = r'\{action\s*:\s*(\d)\}'
+    simple_match = re.search(simple_json_pattern, text)
+    if simple_match:
+        try:
+            action = int(simple_match.group(1))
+            if 0 <= action <= 5:
+                return {"thinking_process": text, "action": action}
+        except (ValueError, IndexError):
+            pass
+    
+    # Last resort: look for single digit 0-5 that might represent action
+    single_digit_match = re.search(r'\b([0-5])\b', text)
+    if single_digit_match:
+        try:
+            action = int(single_digit_match.group(1))
+            return {"thinking_process": text, "action": action}
+        except (ValueError, IndexError):
+            pass
+    
+    # If all methods fail, return the thinking process
+    return {"thinking_process": text, "action": None}
 
-    json_str = json_match.group(0)
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError:
-        # Fallback for malformed JSON, but still try to get thoughts
-        think_match = THINK_BLOCK_PATTERN.search(text)
-        thinking = think_match.group(1).strip() if think_match else text.strip()
-        return {"thinking_process": thinking, "action": None}
 
-    action = data.get("action")
-
-    think_match = THINK_BLOCK_PATTERN.search(text)
-    thinking = think_match.group(1).strip() if think_match else ""
-
-    # If thinking is in the JSON, prefer that, otherwise use the <think> block
-    thinking_in_json = data.get("thinking_process") or data.get("thoughts")
-    if thinking_in_json:
-        thinking = str(thinking_in_json)
-
-    return {"thinking_process": thinking, "action": action}
-
-
-try:  # Fire-and-forget warm-up so downloads start early
+# Pre-load the model on import
+try:
     _ensure_pipeline_ready(_get_client())
-except Exception:  # pragma: no cover - best-effort warm-up
+except Exception:
     pass
