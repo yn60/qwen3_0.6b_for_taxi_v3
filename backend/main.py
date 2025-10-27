@@ -10,6 +10,7 @@ from flask import Flask, Response, jsonify, render_template, stream_with_context
 
 from taxi.environment import TaxiEnvironment
 from taxi.state_utils import decode_state, describe_state_for_llm, get_prompt
+from taxi.action_utils import coerce_action, ACTION_LABELS
 from llm.client import stream_qwen_action
 
 
@@ -156,14 +157,7 @@ def get_current_game_state():
     }
 
 
-ACTION_LABELS = {
-    0: "Move South",
-    1: "Move North",
-    2: "Move East",
-    3: "Move West",
-    4: "Pick up passenger",
-    5: "Drop off passenger",
-}
+ACTION_LABELS = ACTION_LABELS
 
 
 _WORD_NUMBER_TO_INT = {
@@ -189,100 +183,8 @@ _DROP_KEYWORDS = {"drop", "dropoff", "drop-off", "release", "deliver"}
 
 
 def _coerce_action(candidate):
-    if candidate is None or isinstance(candidate, bool):
-        return None
-    if isinstance(candidate, int):
-        return candidate if candidate in ACTION_LABELS else None
-    if isinstance(candidate, dict):
-        for key in (
-            "code",
-            "id",
-            "index",
-            "value",
-            "action",
-            "action_code",
-            "action_id",
-            "choice",
-            "selection",
-        ):
-            if key in candidate:
-                coerced = _coerce_action(candidate[key])
-                if coerced is not None:
-                    return coerced
-        for key in ("direction", "target", "name", "label"):
-            if key in candidate:
-                coerced = _coerce_action(candidate[key])
-                if coerced is not None:
-                    return coerced
-        return None
-    if isinstance(candidate, (list, tuple)):
-        for item in candidate:
-            coerced = _coerce_action(item)
-            if coerced is not None:
-                return coerced
-        return None
-    if isinstance(candidate, str):
-        text = candidate.strip()
-        if not text:
-            return None
-        lowered = text.lower()
-        if lowered in {"null", "none"}:
-            return None
-
-        digit_match = re.search(r"\b([0-5])\b", lowered)
-        if digit_match:
-            return int(digit_match.group(1))
-
-        for word, value in _WORD_NUMBER_TO_INT.items():
-            if re.search(rf"\b{re.escape(word)}\b", lowered):
-                if value in ACTION_LABELS:
-                    return value
-
-        cleaned = re.sub(r"[^a-z0-9\s]", " ", lowered)
-        tokens = [tok for tok in cleaned.split() if tok]
-        token_set = set(tokens)
-
-        if token_set & _PICK_KEYWORDS or (
-            "pick" in token_set and ("up" in token_set or "passenger" in token_set)
-        ):
-            return 4
-        if token_set & _DROP_KEYWORDS or (
-            "drop" in token_set and ("off" in token_set or "passenger" in token_set)
-        ):
-            return 5
-
-        for code, keywords in _DIRECTION_KEYWORDS.items():
-            if token_set & keywords:
-                return code
-
-        if {"move", "s"}.issubset(token_set) or {"action", "s"}.issubset(token_set):
-            return 0
-        if {"move", "n"}.issubset(token_set) or {"action", "n"}.issubset(token_set):
-            return 1
-        if {"move", "e"}.issubset(token_set) or {"action", "e"}.issubset(token_set):
-            return 2
-        if {"move", "w"}.issubset(token_set) or {"action", "w"}.issubset(token_set):
-            return 3
-
-        for code, keywords in _DIRECTION_KEYWORDS.items():
-            for keyword in keywords:
-                if keyword in lowered:
-                    return code
-
-        if any(keyword in lowered for keyword in _PICK_KEYWORDS):
-            return 4
-        if any(keyword in lowered for keyword in _DROP_KEYWORDS):
-            return 5
-
-        return None
-    if isinstance(candidate, float) and candidate.is_integer():
-        candidate_int = int(candidate)
-        return candidate_int if candidate_int in ACTION_LABELS else None
-    try:
-        candidate_int = int(candidate)
-    except (TypeError, ValueError):
-        return None
-    return candidate_int if candidate_int in ACTION_LABELS else None
+    # Back-compat wrapper so existing imports keep working
+    return coerce_action(candidate)
 
 
 if __name__ == "__main__":
