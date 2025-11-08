@@ -52,14 +52,6 @@ def get_prompt_with_history(state_description: str, previous_actions: list) -> s
     """Build prompt with action history context"""
     return prompt_builder.build_prompt_with_history(state_description, previous_actions)
 
-def get_context_aware_prompt(decoded_state: Dict[str, int]) -> str:
-    """Get context-aware prompt with strategic hints"""
-    from . import prompt_builder
-    state_desc = describe_state_for_llm(decoded_state)
-    taxi_pos = (decoded_state["taxi_row"], decoded_state["taxi_col"])
-    dest_pos = get_destination_coords(decoded_state["destination_index"])
-    return prompt_builder.build_context_aware_prompt(state_desc, taxi_pos, dest_pos)
-
 def get_destination_coords(dest_index: int) -> Tuple[int, int]:
     """Get coordinates from location index"""
     loc = LOCATION_LOOKUP[dest_index]
@@ -68,9 +60,9 @@ def get_destination_coords(dest_index: int) -> Tuple[int, int]:
 
 __all__ = [
     "decode_state",
-    "describe_state_for_llm",
+    "describe_state_for_llm", 
     "get_prompt",
     "get_optimized_prompt",
     "get_prompt_with_history",
-    "get_context_aware_prompt"
+    # "get_context_aware_prompt"
 ]

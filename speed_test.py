@@ -1,12 +1,14 @@
 # speed_test.py
 import time
 import torch
-from backend.taxi.state_utils import describe_state_for_llm, get_prompt
+from backend.taxi.state_utils import describe_state_for_llm
+from backend.taxi.prompt_builder import build_prompt
 from backend.llm.client import get_qwen_action, _get_client, _ensure_pipeline_ready
+
 
 def wait_for_model_loading():
     """Wait for model to fully load"""
-    print("🔄 Waiting for model to load...")
+    print("Waiting for model to load...")
     client = _get_client()
     
     # Force load model
@@ -20,24 +22,25 @@ def wait_for_model_loading():
     
     while time.time() - start_time < max_wait:
         if _ensure_pipeline_ready(client) and client._pipeline is not None:
-            print("✓ Model loaded successfully!")
+            print("Model loaded successfully!")
             # Verify model device
             try:
                 device = next(client._pipeline.model.parameters()).device
                 print(f"Model running on: {device}")
                 return True
             except:
-                print("✓ Model loaded (device detection skipped)")
+                print("Model loaded (device detection skipped)")
                 return True
-        print(f"⏳ Model loading... waited {int(time.time() - start_time)} seconds")
+        print(f"Model loading... waited {int(time.time() - start_time)} seconds")
         time.sleep(5)
     
-    print("❌ Model loading timeout")
+    print("Model loading timeout")
     return False
 
+
 def improved_speed_test():
-    print("🚕 Taxi-v3 Qwen3-0.6B Speed Test (Colab GPU)")
-    print("=" * 60)
+    print("Taxi-v3 Qwen3-0.6B Speed Test (Colab GPU) - New Prompt Validation")
+    print("=" * 70)
     
     # Check GPU availability
     print(f"GPU available: {torch.cuda.is_available()}")
@@ -56,17 +59,26 @@ def improved_speed_test():
         "destination_index": 3,   # Destination: Blue (4,3)
     }
     
-    # Build prompt
+    # Build prompt - using new prompt builder
     state_desc = describe_state_for_llm(EXAMPLE_DECODED_STATE)
-    prompt = get_prompt(state_desc)
+    prompt = build_prompt(state_desc)
     
-    print(f"\n📝 Test Configuration:")
+    print(f"\nTest Configuration:")
     print(f"Prompt length: {len(prompt)} characters")
     print(f"State description: {state_desc}")
-    print(f"Prompt preview: {prompt[:150]}...")
+    print(f"Prompt preview: {prompt[:200]}...")
+    
+    # Verify if using new prompt
+    if "Output ONLY JSON" in prompt and "No thinking" in prompt:
+        print("Error: Still using old NO-THINKING prompt!")
+        return
+    elif "MUST output the JSON action FIRST" in prompt:
+        print("Confirmed: Using new ACTION-FIRST + reasoning prompt!")
+    else:
+        print("Warning: Unable to determine prompt version")
     
     # Warm-up phase
-    print(f"\n🔥 Warm-up phase (3 calls)...")
+    print(f"\nWarm-up phase (3 calls)...")
     warmup_times = []
     for i in range(3):
         start = time.perf_counter()
@@ -82,7 +94,7 @@ def improved_speed_test():
         print(f"      Reasoning: {reasoning_preview}")
     
     # Main test phase
-    print(f"\n📊 Main test (5 calls)...")
+    print(f"\nMain test (5 calls)...")
     test_times = []
     actions = []
     
@@ -101,7 +113,7 @@ def improved_speed_test():
         print(f"      Reasoning: {reasoning_preview}")
     
     # Results analysis
-    print(f"\n📈 Detailed Results Analysis")
+    print(f"\nDetailed Results Analysis")
     print("=" * 40)
     
     if test_times:
@@ -121,7 +133,7 @@ def improved_speed_test():
         valid_actions = [a for a in actions if a is not None and 0 <= a <= 5]
         valid_percentage = len(valid_actions) / len(actions) * 100
         
-        print(f"\n🎯 Action Validity:")
+        print(f"\nAction Validity:")
         print(f"Valid actions: {len(valid_actions)}/{len(actions)} ({valid_percentage:.1f}%)")
         
         if valid_actions:
@@ -138,7 +150,7 @@ def improved_speed_test():
         # Performance comparison
         if avg_time > 0:
             speedup = 461.79 / avg_time
-            print(f"\n⚡ Performance Comparison:")
+            print(f"\nPerformance Comparison:")
             print(f"Compared to local Mac: {speedup:.1f}x faster")
             
             # Comparison with pre-optimization
@@ -147,9 +159,10 @@ def improved_speed_test():
             print(f"Compared to pre-optimization: {improvement:.1f}x faster")
     
     else:
-        print("❌ No valid test data")
+        print("No valid test data")
     
-    print(f"\n💡 Test completed! Project code was not modified.")
+    print(f"\nTest completed! Using new ACTION-FIRST prompt system.")
+
 
 if __name__ == "__main__":
     improved_speed_test()
